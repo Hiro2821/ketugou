@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>切り抜き結合 — Crop & Stitch</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=Noto+Sans+JP:wght@400;500&family=Zen+Kaku+Gothic+New:ital@0&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAFAF9;
+    --surface:#FFFFFF;
+    --ink:#15150F;
+    --ink-soft:#6E6E68;
+    --ink-faint:#9C9B94;
+    --line:#E4E3DD;
+    --line-strong:#C7C6BE;
+    --danger:#B3392E;
+    --radius:18px;
+    --radius-sm:12px;
+    --radius-pill:999px;
+    --safe-b:env(safe-area-inset-bottom, 0px);
+    --safe-t:env(safe-area-inset-top, 0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  h1,h2,.disp{
+    font-family:'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif;
+    font-weight:700;
+    letter-spacing:.02em;
+  }
+  .app{
+    display:flex;
+    flex-direction:column;
+    min-height:100dvh;
+    max-width:560px;
+    margin:0 auto;
+    background:var(--bg);
+  }
+
+  /* ---------- Stepper (signature ruler element) ---------- */
+  .stepper{
+    padding:calc(14px + var(--safe-t)) 20px 12px;
+    border-bottom:1px solid var(--line);
+    background:var(--surface);
+    position:sticky; top:0; z-index:20;
+  }
+  .stepper .rule{
+    position:relative;
+    display:flex;
+    justify-content:space-between;
+    margin-top:14px;
+  }
+  .stepper .rule::before{
+    content:"";
+    position:absolute;
+    left:0; right:0; top:9px;
+    height:1px;
+    background:var(--line-strong);
+  }
+  .step{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+    flex:1;
+    font-size:10px;
+    color:var(--ink-faint);
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    letter-spacing:.03em;
+  }
+  .step .tick{
+    width:7px; height:7px;
+    border-radius:50%;
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    z-index:1;
+  }
+  .step.done .tick{ background:var(--ink); border-color:var(--ink); }
+  .step.active .tick{ background:var(--ink); border-color:var(--ink); width:9px; height:9px; }
+  .step.active{ color:var(--ink); }
+  .step.done{ color:var(--ink-soft); }
+  .app-title{ font-size:15px; margin:0; }
+  .app-sub{ font-size:11px; color:var(--ink-soft); margin:2px 0 0; font-weight:400; }
+
+  main{ flex:1; display:flex; flex-direction:column; min-height:0; }
+  .screen{ display:none; flex:1; flex-direction:column; padding:22px 20px 24px; min-height:0; }
+  .screen.active{ display:flex; }
+
+  /* ---------- Select screen ---------- */
+  .lead{ font-size:13px; color:var(--ink-soft); margin:0 0 20px; line-height:1.7; }
+  .picker{
+    border:1px solid var(--line-strong);
+    background:var(--surface);
+    border-radius:var(--radius);
+    padding:36px 16px;
+    text-align:center;
+    cursor:pointer;
+  }
+  .picker .plus{
+    width:34px; height:34px; margin:0 auto 12px;
+    border:1px solid var(--ink); border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; font-weight:300;
+  }
+  .picker .ptext{ font-size:13px; font-weight:500; font-family:'Zen Kaku Gothic New', sans-serif; }
+  .picker .psub{ font-size:11px; color:var(--ink-faint); margin-top:4px; }
+  input[type=file]{ display:none; }
+
+  .thumbs{
+    margin-top:20px;
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .thumb-row{
+    display:flex; align-items:center; gap:12px;
+    background:var(--surface);
+    padding:10px 12px;
+  }
+  .thumb-row .no{
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    font-size:11px; color:var(--ink-faint);
+    width:16px; text-align:center;
+  }
+  .thumb-row img{
+    width:44px; height:44px; object-fit:cover;
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    background:#eee;
+  }
+  .thumb-row .name{
+    flex:1; min-width:0;
+    font-size:12px; color:var(--ink-soft);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .thumb-row .rm{
+    border:none; background:var(--bg);
+    color:var(--ink-faint);
+    font-size:16px; line-height:1;
+    width:28px; height:28px;
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    padding:0; cursor:pointer;
+  }
+  .thumb-row .rm:active{ color:var(--danger); }
+
+  /* ---------- Crop screen ---------- */
+  .crop-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px; }
+  .crop-count{ font-family:'Zen Kaku Gothic New', sans-serif; font-size:12px; color:var(--ink-soft); }
+  .crop-reset{ font-size:12px; color:var(--ink-soft); background:none; border:none; text-decoration:underline; text-underline-offset:3px; padding:4px; cursor:pointer; }
+
+  .stage{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:0;
+    background:repeating-conic-gradient(#efeee9 0% 25%, #f6f5f1 0% 50%) 0 0 / 16px 16px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+  }
+  .imgwrap{ position:relative; line-height:0; touch-action:none; }
+  .imgwrap img{ display:block; max-width:100%; max-height:60vh; width:auto; height:auto; }
+  .mask{ position:absolute; inset:0; pointer-events:none; }
+  .mask div{ position:absolute; background:rgba(10,10,8,.55); }
+
+  .crop-box{
+    position:absolute;
+    border:1px solid #fff;
+    border-radius:10px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.35);
+    touch-action:none;
+    cursor:move;
+  }
+  .crop-box .g{ position:absolute; background:rgba(255,255,255,.55); }
+  .crop-box .gv{ width:1px; height:100%; top:0; }
+  .crop-box .gh{ height:1px; width:100%; left:0; }
+  .crop-box .g1{ left:33.333%; } .crop-box .g2{ left:66.666%; }
+  .crop-box .g3{ top:33.333%; } .crop-box .g4{ top:66.666%; }
+  .handle{
+    position:absolute;
+    width:22px; height:22px;
+    margin:-11px;
+    touch-action:none;
+  }
+  .handle::after{
+    content:"";
+    position:absolute; top:7px; left:7px;
+    width:12px; height:12px;
+    border-color:#fff;
+    border-style:solid;
+    box-shadow:0 0 0 1px rgba(0,0,0,.4);
+  }
+  .handle.nw{ top:0; left:0; cursor:nwse-resize; }
+  .handle.nw::after{ border-width:2px 0 0 2px; top:7px; left:7px; }
+  .handle.ne{ top:0; right:0; cursor:nesw-resize; margin-right:-11px; }
+  .handle.ne::after{ border-width:2px 2px 0 0; right:7px; left:auto; }
+  .handle.sw{ bottom:0; left:0; cursor:nesw-resize; margin-bottom:-11px; }
+  .handle.sw::after{ border-width:0 0 2px 2px; bottom:7px; top:auto; }
+  .handle.se{ bottom:0; right:0; cursor:nwse-resize; margin-bottom:-11px; margin-right:-11px; }
+  .handle.se::after{ border-width:0 2px 2px 0; bottom:7px; top:auto; right:7px; left:auto; }
+
+  .strip{
+    display:flex; gap:6px; margin-top:14px;
+    overflow-x:auto; padding-bottom:2px;
+  }
+  .strip img{
+    width:40px; height:40px; object-fit:cover;
+    border:1px solid var(--line); border-radius:var(--radius-sm);
+    opacity:.45; flex-shrink:0;
+  }
+  .strip img.cur{ opacity:1; border-color:var(--ink); }
+  .strip img.done{ opacity:.85; }
+
+  /* ---------- Result screen ---------- */
+  .result-wrap{
+    flex:1; overflow:auto; min-height:0;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:repeating-conic-gradient(#efeee9 0% 25%, #f6f5f1 0% 50%) 0 0 / 16px 16px;
+    display:flex; justify-content:center;
+  }
+  .result-wrap canvas{ display:block; max-width:100%; height:auto; }
+  .result-meta{ font-size:11px; color:var(--ink-soft); margin-top:10px; text-align:center; }
+
+  /* ---------- Footer action bar ---------- */
+  .action-bar{
+    padding:14px 20px calc(16px + var(--safe-b));
+    border-top:1px solid var(--line);
+    background:var(--surface);
+    display:flex; gap:10px;
+    position:sticky; bottom:0;
+  }
+  button.primary, button.secondary, .primary, .secondary{
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    font-size:15px; font-weight:500;
+    border-radius:var(--radius-pill);
+    padding:15px 20px;
+    min-height:52px;
+    cursor:pointer;
+    letter-spacing:.02em;
+  }
+  button.primary{
+    flex:1; background:var(--ink); color:var(--surface); border:1px solid var(--ink);
+  }
+  button.primary:disabled{ background:var(--line-strong); border-color:var(--line-strong); color:#fff; cursor:not-allowed; }
+  button.primary:active:not(:disabled){ background:#000; }
+  button.secondary{
+    background:var(--surface); color:var(--ink); border:1px solid var(--line-strong);
+  }
+  button.secondary:active{ background:var(--bg); }
+  .hint{ font-size:11px; color:var(--ink-faint); text-align:center; margin-top:10px; }
+  .save-hint{ font-size:12px; color:var(--ink-soft); text-align:center; margin-top:12px; line-height:1.6; }
+  .save-warn{ font-size:11px; color:var(--danger); text-align:center; margin-top:8px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="stepper">
+    <h1 class="app-title">切り抜き結合</h1>
+    <p class="app-sub" id="stepSub">画像を選んでください</p>
+    <div class="rule" id="ruleSteps">
+      <div class="step active" data-step="0"><span class="tick"></span>選択</div>
+      <div class="step" data-step="1"><span class="tick"></span>切り抜き</div>
+      <div class="step" data-step="2"><span class="tick"></span>確認</div>
+      <div class="step" data-step="3"><span class="tick"></span>保存</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1. 画像選択 -->
+    <section class="screen active" id="screen-select">
+      <p class="lead">結合したい画像を、使いたい順番に複数選択してください。あとで並び替えはできないので、選ぶ順番に注意してください。</p>
+      <label class="picker" for="fileInput">
+        <div class="plus">＋</div>
+        <div class="ptext">写真を選択</div>
+        <div class="psub">複数選択できます</div>
+      </label>
+      <input type="file" id="fileInput" accept="image/*" multiple>
+      <div class="thumbs" id="thumbs" style="display:none;"></div>
+    </section>
+
+    <!-- 2. 切り抜き -->
+    <section class="screen" id="screen-crop">
+      <div class="crop-head">
+        <span class="crop-count" id="cropCount">1 / 1 枚目</span>
+        <button class="crop-reset" id="resetCrop">範囲をリセット</button>
+      </div>
+      <div class="stage">
+        <div class="imgwrap" id="imgwrap">
+          <img id="cropImg" alt="">
+          <div class="mask" id="mask">
+            <div id="maskTop"></div><div id="maskBottom"></div><div id="maskLeft"></div><div id="maskRight"></div>
+          </div>
+          <div class="crop-box" id="cropBox">
+            <div class="g gv g1"></div><div class="g gv g2"></div>
+            <div class="g gh g3"></div><div class="g gh g4"></div>
+            <div class="handle nw" data-c="nw"></div>
+            <div class="handle ne" data-c="ne"></div>
+            <div class="handle sw" data-c="sw"></div>
+            <div class="handle se" data-c="se"></div>
+          </div>
+        </div>
+      </div>
+      <div class="strip" id="strip"></div>
+    </section>
+
+    <!-- 3. 確認 → 4. 保存 -->
+    <section class="screen" id="screen-result">
+      <div class="result-wrap"><canvas id="resultCanvas"></canvas></div>
+      <p class="result-meta" id="resultMeta"></p>
+      <p class="save-warn" id="saveWarn" style="display:none;"></p>
+      <p class="save-hint" id="saveHint"></p>
+    </section>
+  </main>
+
+  <footer class="action-bar" id="actionBar">
+    <button class="secondary" id="btnSecondary" style="display:none;">戻る</button>
+    <button class="primary" id="btnPrimary" disabled>次へ</button>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- State ----------
+  var items = [];        // { file, url, img(HTMLImageElement), cropCanvas(Canvas|null) }
+  var currentIndex = -1; // index in items currently being cropped
+  var STAGE = { SELECT:0, CROP:1, RESULT:2 };
+  var stage = STAGE.SELECT;
+
+  var box = { x:0, y:0, w:0, h:0 }; // in displayed(px) coords of current image
+  var dispW = 0, dispH = 0;         // displayed size of current image
+  var drag = null;                  // {mode:'move'|corner, startX, startY, startBox}
+
+  // ---------- Elements ----------
+  var fileInput = document.getElementById('fileInput');
+  var thumbsEl = document.getElementById('thumbs');
+  var screens = {
+    select: document.getElementById('screen-select'),
+    crop: document.getElementById('screen-crop'),
+    result: document.getElementById('screen-result')
+  };
+  var btnPrimary = document.getElementById('btnPrimary');
+  var btnSecondary = document.getElementById('btnSecondary');
+  var actionBar = document.getElementById('actionBar');
+  var stepSub = document.getElementById('stepSub');
+  var stepEls = document.querySelectorAll('.step');
+
+  var cropImg = document.getElementById('cropImg');
+  var imgwrap = document.getElementById('imgwrap');
+  var stageEl = document.querySelector('.stage');
+  var cropBox = document.getElementById('cropBox');
+  var cropCount = document.getElementById('cropCount');
+  var stripEl = document.getElementById('strip');
+  var resetCropBtn = document.getElementById('resetCrop');
+  var maskTop = document.getElementById('maskTop');
+  var maskBottom = document.getElementById('maskBottom');
+  var maskLeft = document.getElementById('maskLeft');
+  var maskRight = document.getElementById('maskRight');
+
+  var resultCanvas = document.getElementById('resultCanvas');
+  var resultMeta = document.getElementById('resultMeta');
+  var saveHint = document.getElementById('saveHint');
+  var saveWarn = document.getElementById('saveWarn');
+
+  // Can this browser share an image file directly (→ iOS/Android "Save Image" to Photos)?
+  var canShareFiles = false;
+  try{
+    var _probe = new File([new Blob(['x'], {type:'image/png'})], 'probe.png', {type:'image/png'});
+    canShareFiles = !!(navigator.canShare && navigator.canShare({ files:[_probe] }));
+  }catch(e){ canShareFiles = false; }
+
+  // Conservative safe limits for mobile browser canvas memory (esp. iOS Safari).
+  // Exceeding these doesn't block the export, but we warn the user beforehand.
+  var SAFE_MAX_DIM = 8000;          // px, single side
+  var SAFE_MAX_AREA = 30000000;     // px^2 (~30MP combined)
+
+  // ---------- Step UI ----------
+  function renderStepper(){
+    stepEls.forEach(function(el){
+      var s = parseInt(el.dataset.step, 10);
+      el.classList.remove('active','done');
+      if(s < stage) el.classList.add('done');
+      else if(s === stage) el.classList.add('active');
+    });
+    if(stage === STAGE.SELECT){
+      stepSub.textContent = items.length ? items.length + ' 枚選択中' : '画像を選んでください';
+    } else if(stage === STAGE.CROP){
+      stepSub.textContent = '切り抜く範囲を指定してください';
+    } else {
+      stepSub.textContent = '結合結果を確認して保存してください';
+    }
+  }
+
+  function showScreen(name){
+    Object.keys(screens).forEach(function(k){ screens[k].classList.toggle('active', k===name); });
+  }
+
+  // ---------- 1. Select ----------
+  fileInput.addEventListener('change', function(e){
+    var files = Array.prototype.slice.call(e.target.files || []);
+    files.forEach(function(f){
+      if(!/^image\//.test(f.type)) return;
+      items.push({ file:f, url:URL.createObjectURL(f), img:null, cropCanvas:null });
+    });
+    fileInput.value = ''; // allow re-selecting same file later
+    renderThumbs();
+  });
+
+  function renderThumbs(){
+    thumbsEl.style.display = items.length ? 'flex' : 'none';
+    thumbsEl.innerHTML = '';
+    items.forEach(function(it, i){
+      var row = document.createElement('div');
+      row.className = 'thumb-row';
+      row.innerHTML =
+        '<span class="no">' + (i+1) + '</span>' +
+        '<img src="' + it.url + '" alt="">' +
+        '<span class="name">' + escapeHtml(it.file.name) + '</span>' +
+        '<button class="rm" data-i="' + i + '" aria-label="削除">×</button>';
+      thumbsEl.appendChild(row);
+    });
+    thumbsEl.querySelectorAll('.rm').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var i = parseInt(btn.dataset.i, 10);
+        URL.revokeObjectURL(items[i].url);
+        items.splice(i,1);
+        renderThumbs();
+        updatePrimaryForSelect();
+      });
+    });
+    updatePrimaryForSelect();
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function updatePrimaryForSelect(){
+    btnPrimary.textContent = '次へ（切り抜きへ）';
+    btnPrimary.disabled = items.length === 0;
+    btnSecondary.style.display = 'none';
+    renderStepper();
+  }
+
+  // ---------- 2. Crop ----------
+  function startCropFlow(){
+    stage = STAGE.CROP;
+    currentIndex = 0;
+    showScreen('crop');
+    renderStepper();
+    renderStrip();
+    loadCurrentImage();
+  }
+
+  function renderStrip(){
+    stripEl.innerHTML = '';
+    items.forEach(function(it, i){
+      var im = document.createElement('img');
+      im.src = it.url;
+      if(i === currentIndex) im.className = 'cur';
+      else if(it.cropCanvas) im.className = 'done';
+      stripEl.appendChild(im);
+    });
+  }
+
+  function loadCurrentImage(){
+    var it = items[currentIndex];
+    cropCount.textContent = (currentIndex+1) + ' / ' + items.length + ' 枚目';
+    updatePrimaryForCrop();
+    updateSecondaryForCrop();
+    renderStrip();
+
+    function apply(im){
+      cropImg.src = it.url;
+      // wait a frame so the browser has computed the image's rendered box
+      requestAnimationFrame(function(){ layoutForImage(im); });
+    }
+
+    if(it.img){
+      apply(it.img);
+    } else {
+      var im = new Image();
+      im.onload = function(){
+        it.img = im;
+        apply(im);
+      };
+      im.src = it.url;
+    }
+  }
+
+  function layoutForImage(imEl){
+    // constrain the image to the visible stage area, then read its rendered box
+    cropImg.style.maxWidth = stageEl.clientWidth + 'px';
+    cropImg.style.maxHeight = stageEl.clientHeight + 'px';
+    dispW = cropImg.clientWidth;
+    dispH = cropImg.clientHeight;
+    imgwrap.style.width = dispW + 'px';
+    imgwrap.style.height = dispH + 'px';
+
+    var it = items[currentIndex];
+    if(it.savedBox){
+      box = { x:it.savedBox.x, y:it.savedBox.y, w:it.savedBox.w, h:it.savedBox.h };
+      clampBox();
+    } else {
+      box = { x:0, y:0, w:dispW, h:dispH };
+    }
+    renderBox();
+  }
+
+  function clampBox(){
+    box.w = Math.min(box.w, dispW);
+    box.h = Math.min(box.h, dispH);
+    box.x = Math.min(Math.max(0, box.x), dispW - box.w);
+    box.y = Math.min(Math.max(0, box.y), dispH - box.h);
+  }
+
+  function renderBox(){
+    cropBox.style.left = box.x + 'px';
+    cropBox.style.top = box.y + 'px';
+    cropBox.style.width = box.w + 'px';
+    cropBox.style.height = box.h + 'px';
+    // dim mask outside crop box
+    maskTop.style.cssText    = 'left:0; top:0; right:0; height:' + box.y + 'px;';
+    maskBottom.style.cssText = 'left:0; top:' + (box.y+box.h) + 'px; right:0; bottom:0;';
+    maskLeft.style.cssText   = 'left:0; top:' + box.y + 'px; width:' + box.x + 'px; height:' + box.h + 'px;';
+    maskRight.style.cssText  = 'left:' + (box.x+box.w) + 'px; top:' + box.y + 'px; right:0; height:' + box.h + 'px;';
+  }
+
+  var MIN = 24;
+
+  function pointerXY(e, wrapRect){
+    return { x: e.clientX - wrapRect.left, y: e.clientY - wrapRect.top };
+  }
+
+  cropBox.addEventListener('pointerdown', function(e){
+    if(e.target.classList.contains('handle')) return; // handled separately
+    e.preventDefault();
+    cropBox.setPointerCapture(e.pointerId);
+    var wrapRect = imgwrap.getBoundingClientRect();
+    var p = pointerXY(e, wrapRect);
+    drag = { mode:'move', startX:p.x, startY:p.y, startBox:{x:box.x,y:box.y,w:box.w,h:box.h} };
+  });
+
+  cropBox.querySelectorAll('.handle').forEach(function(h){
+    h.addEventListener('pointerdown', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      h.setPointerCapture(e.pointerId);
+      var wrapRect = imgwrap.getBoundingClientRect();
+      var p = pointerXY(e, wrapRect);
+      drag = { mode:h.dataset.c, startX:p.x, startY:p.y, startBox:{x:box.x,y:box.y,w:box.w,h:box.h}, pid:e.pointerId, handle:h };
+    });
+    h.addEventListener('pointermove', function(e){ handlePointerMove(e); });
+    h.addEventListener('pointerup', function(e){ drag=null; });
+    h.addEventListener('pointercancel', function(e){ drag=null; });
+  });
+
+  cropBox.addEventListener('pointermove', handlePointerMove);
+  cropBox.addEventListener('pointerup', function(){ drag=null; });
+  cropBox.addEventListener('pointercancel', function(){ drag=null; });
+
+  function handlePointerMove(e){
+    if(!drag) return;
+    var wrapRect = imgwrap.getBoundingClientRect();
+    var p = pointerXY(e, wrapRect);
+    var dx = p.x - drag.startX;
+    var dy = p.y - drag.startY;
+    var sb = drag.startBox;
+
+    if(drag.mode === 'move'){
+      box.x = Math.min(Math.max(0, sb.x + dx), dispW - sb.w);
+      box.y = Math.min(Math.max(0, sb.y + dy), dispH - sb.h);
+      box.w = sb.w; box.h = sb.h;
+    } else {
+      var nx = sb.x, ny = sb.y, nw = sb.w, nh = sb.h;
+      if(drag.mode === 'nw'){
+        nx = Math.min(sb.x + dx, sb.x + sb.w - MIN); nx = Math.max(0, nx);
+        ny = Math.min(sb.y + dy, sb.y + sb.h - MIN); ny = Math.max(0, ny);
+        nw = sb.x + sb.w - nx; nh = sb.y + sb.h - ny;
+      } else if(drag.mode === 'ne'){
+        ny = Math.min(sb.y + dy, sb.y + sb.h - MIN); ny = Math.max(0, ny);
+        nw = Math.min(Math.max(MIN, sb.w + dx), dispW - sb.x);
+        nh = sb.y + sb.h - ny;
+        nx = sb.x;
+      } else if(drag.mode === 'sw'){
+        nx = Math.min(sb.x + dx, sb.x + sb.w - MIN); nx = Math.max(0, nx);
+        nw = sb.x + sb.w - nx;
+        nh = Math.min(Math.max(MIN, sb.h + dy), dispH - sb.y);
+        ny = sb.y;
+      } else if(drag.mode === 'se'){
+        nw = Math.min(Math.max(MIN, sb.w + dx), dispW - sb.x);
+        nh = Math.min(Math.max(MIN, sb.h + dy), dispH - sb.y);
+        nx = sb.x; ny = sb.y;
+      }
+      box.x = nx; box.y = ny; box.w = nw; box.h = nh;
+    }
+    renderBox();
+  }
+
+  resetCropBtn.addEventListener('click', function(){
+    box = { x:0, y:0, w:dispW, h:dispH };
+    renderBox();
+  });
+
+  function updatePrimaryForCrop(){
+    var isLast = currentIndex === items.length - 1;
+    btnPrimary.textContent = isLast ? '切り抜きを確定して結合へ' : '切り抜きを確定して次の画像へ';
+    btnPrimary.disabled = false;
+  }
+
+  function updateSecondaryForCrop(){
+    if(currentIndex > 0){
+      btnSecondary.textContent = '前の画像へ戻る';
+      btnSecondary.style.display = 'block';
+    } else {
+      btnSecondary.style.display = 'none';
+    }
+  }
+
+  function confirmCurrentCrop(){
+    var it = items[currentIndex];
+    var im = it.img;
+    var scale = im.naturalWidth / dispW; // uniform since aspect preserved
+
+    var sx = Math.round(box.x * scale);
+    var sy = Math.round(box.y * scale);
+    var sw = Math.max(1, Math.round(box.w * scale));
+    var sh = Math.max(1, Math.round(box.h * scale));
+    sw = Math.min(sw, im.naturalWidth - sx);
+    sh = Math.min(sh, im.naturalHeight - sy);
+
+    var c = document.createElement('canvas');
+    c.width = sw; c.height = sh;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(im, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    it.cropCanvas = c;
+    it.savedBox = { x:box.x, y:box.y, w:box.w, h:box.h };
+
+    if(currentIndex < items.length - 1){
+      currentIndex++;
+      loadCurrentImage();
+    } else {
+      buildResult();
+    }
+  }
+
+  // ---------- 3/4. Result ----------
+  function buildResult(){
+    stage = STAGE.RESULT;
+    showScreen('result');
+    renderStepper();
+
+    // Each cropCanvas was drawn at the source image's native pixel resolution
+    // (see confirmCurrentCrop: it scales the on-screen selection back up to
+    // im.naturalWidth/naturalHeight and copies pixels 1:1, no resampling).
+    // The combined canvas below is sized to match, so the exported PNG keeps
+    // full original resolution regardless of how small it's shown on screen.
+    var maxW = 0, totalH = 0;
+    items.forEach(function(it){
+      maxW = Math.max(maxW, it.cropCanvas.width);
+      totalH += it.cropCanvas.height;
+    });
+
+    resultCanvas.width = maxW;
+    resultCanvas.height = totalH;
+    var ctx = resultCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, maxW, totalH);
+
+    var y = 0;
+    items.forEach(function(it){
+      var c = it.cropCanvas;
+      var x = Math.round((maxW - c.width) / 2);
+      ctx.drawImage(c, x, y);
+      y += c.height;
+    });
+
+    resultMeta.textContent = maxW + ' × ' + totalH + ' px　·　' + items.length + ' 枚を結合（元画像の解像度のまま）';
+
+    // Warn (don't block) if the combined size is large enough to risk hitting
+    // a mobile browser's canvas memory limits (mainly older/low-memory iOS devices).
+    var big = maxW > SAFE_MAX_DIM || totalH > SAFE_MAX_DIM || (maxW * totalH) > SAFE_MAX_AREA;
+    saveWarn.style.display = big ? 'block' : 'none';
+    saveWarn.textContent = big
+      ? '画像サイズが大きいため、端末のメモリ制限で保存に失敗する場合があります。'
+      : '';
+
+    btnPrimary.textContent = canShareFiles ? 'カメラロールに保存' : '画像を保存（PNG）';
+    btnPrimary.disabled = false;
+    saveHint.textContent = canShareFiles
+      ? '共有画面が開いたら「画像を保存」を選ぶと写真アプリに保存されます'
+      : 'お使いの環境では通常のダウンロードで保存されます';
+    btnSecondary.textContent = '最初からやり直す';
+    btnSecondary.style.display = 'block';
+  }
+
+  function restart(){
+    items.forEach(function(it){ URL.revokeObjectURL(it.url); });
+    items = [];
+    currentIndex = -1;
+    stage = STAGE.SELECT;
+    showScreen('select');
+    renderThumbs();
+  }
+
+  function makeFilename(){
+    var ts = new Date();
+    var pad = function(n){ return (n<10?'0':'')+n; };
+    return 'combined-' + ts.getFullYear() + pad(ts.getMonth()+1) + pad(ts.getDate()) + '-' + pad(ts.getHours()) + pad(ts.getMinutes()) + '.png';
+  }
+
+  function downloadBlob(blob, fname){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  }
+
+  function saveResult(){
+    btnPrimary.disabled = true;
+    saveWarn.style.display = 'none';
+
+    // toBlob with 'image/png' is always lossless (the quality argument only
+    // applies to image/jpeg and image/webp, so it's intentionally omitted here).
+    resultCanvas.toBlob(function(blob){
+      btnPrimary.disabled = false;
+
+      if(!blob){
+        saveWarn.style.display = 'block';
+        saveWarn.textContent = '画像の書き出しに失敗しました。画像サイズが大きすぎて端末のメモリ上限を超えた可能性があります。枚数や切り抜き範囲を小さくしてもう一度お試しください。';
+        return;
+      }
+
+      var fname = makeFilename();
+
+      // Primary path: native share sheet, so iOS/Android can save straight
+      // to the Photos app / camera roll ("画像を保存" in the share sheet).
+      if(canShareFiles){
+        var file = new File([blob], fname, { type:'image/png' });
+        navigator.share({ files:[file], title:fname }).catch(function(err){
+          if(err && err.name === 'AbortError') return; // user cancelled the share sheet — do nothing
+          // Any other failure: fall back to a normal download.
+          downloadBlob(blob, fname);
+        });
+        return;
+      }
+
+      // Fallback for browsers without file sharing (most desktop browsers,
+      // and any environment without a camera roll concept).
+      downloadBlob(blob, fname);
+    }, 'image/png');
+  }
+
+  // ---------- Primary button router ----------
+  btnPrimary.addEventListener('click', function(){
+    if(stage === STAGE.SELECT){
+      startCropFlow();
+    } else if(stage === STAGE.CROP){
+      confirmCurrentCrop();
+    } else if(stage === STAGE.RESULT){
+      saveResult();
+    }
+  });
+
+  btnSecondary.addEventListener('click', function(){
+    if(stage === STAGE.CROP && currentIndex > 0){
+      currentIndex--;
+      loadCurrentImage();
+    } else if(stage === STAGE.RESULT){
+      restart();
+    }
+  });
+
+  window.addEventListener('resize', function(){
+    if(stage === STAGE.CROP && items[currentIndex] && items[currentIndex].img){
+      layoutForImage(items[currentIndex].img);
+    }
+  });
+
+  renderStepper();
+})();
+</script>
+</body>
+</html>
